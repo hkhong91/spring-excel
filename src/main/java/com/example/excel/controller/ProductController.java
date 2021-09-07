@@ -4,14 +4,18 @@ import com.example.excel.dto.Product;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.StopWatch;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.sql.Types;
 import java.time.LocalDateTime;
@@ -28,13 +32,7 @@ public class ProductController {
   private final JdbcTemplate jdbcTemplate;
 
   /**
-   * save at once
-   * ---------------------------------------------
-   * sec         %     Task name
-   * ---------------------------------------------
-   * 20.410314497  048%  CreateWorkbook
-   * 5.127343926  012%  SetProducts
-   * 17.357501694  040%  InsertProducts
+   * upload
    *
    * @param file multipart file
    * @throws IOException input stream
@@ -71,5 +69,61 @@ public class ProductController {
     watch.stop();
 
     log.info(watch.prettyPrint());
+  }
+
+  /**
+   * download
+   *
+   * @return file
+   * @throws IOException output stream
+   */
+  @GetMapping("/v1")
+  public ResponseEntity<byte[]> fetchV1() throws IOException {
+    StopWatch watch = new StopWatch("DatabaseToExcelV1");
+
+    watch.start("FetchProducts");
+    List<Product> products = jdbcTemplate.query(
+        "select id, name, created_at as createdAt from product limit ?",
+        new BeanPropertyRowMapper<>(Product.class),
+        1000000
+    );
+    log.info("count: {}", products.size());
+    watch.stop();
+
+    watch.start("SetProducts");
+    SXSSFWorkbook workbook = new SXSSFWorkbook();
+    Sheet sheet = workbook.createSheet();
+    Row row;
+    Cell cell;
+    int rowNum = 0;
+    for (Product product : products) {
+      row = sheet.createRow(rowNum++);
+      cell = row.createCell(0);
+      cell.setCellValue(product.getId());
+
+      cell = row.createCell(1);
+      cell.setCellValue(product.getName());
+
+      cell = row.createCell(2);
+      cell.setCellValue(product.getCreatedAt().toString());
+    }
+    watch.stop();
+
+    watch.start("CreateStream");
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    workbook.write(out);
+    workbook.dispose();
+    byte[] buffer = out.toByteArray();
+    out.close();
+    watch.stop();
+
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+    headers.setContentDisposition(ContentDisposition.attachment().filename("Products.xlsx").build());
+
+    log.info(watch.prettyPrint());
+    return ResponseEntity.ok()
+        .headers(headers)
+        .body(buffer);
   }
 }
