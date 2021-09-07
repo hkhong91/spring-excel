@@ -1,8 +1,9 @@
 spring:
-  r2dbc:
-    url: r2dbc:mysql://localhost:3306/demo
+  datasource:
+    url: jdbc:mysql://localhost:3306/demo?rewriteBatchedStatements=true
     username: root
     password: 1234
-logging:
-  level:
-    org.springframework.r2dbc.core.DefaultDatabaseClient: debug
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  servlet:
+    multipart:
+      max-file-size: 20MB
